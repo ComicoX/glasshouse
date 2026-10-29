@@ -59,6 +59,7 @@ var HA_ENTITIES = [
   { id: 'piccap', type: 'switch', name: 'PicCap Capture', cat: 'controls' },
   { id: 'huesync', type: 'switch', name: 'Hue Sync', cat: 'controls' },
   { id: 'screen_notification', type: 'text', name: 'Screen Notification', cat: 'controls' },
+  { id: 'open_url', type: 'text', name: 'Open Website', cat: 'controls' },
   { id: 'picture_mode', type: 'select', name: 'Picture Mode (Select)', cat: 'controls' },
   { id: 'energy_saving', type: 'select', name: 'Energy Saving Step', cat: 'controls' },
   { id: 'sound_output', type: 'select', name: 'Sound Output', cat: 'controls' },
@@ -909,6 +910,16 @@ function buildEntities(opts) {
           name: 'Screen Notification',
           command_topic: topic.command('toast'),
           icon: 'mdi:message-text-outline',
+          mode: 'text'
+        }
+      },
+      {
+        type: 'text',
+        id: 'open_url',
+        payload: {
+          name: 'Open Website',
+          command_topic: topic.command('launch_url'),
+          icon: 'mdi:web',
           mode: 'text'
         }
       },

@@ -1710,6 +1710,14 @@ function setupHomeAssistant() {
       return;
     }
 
+    if (action === 'launch_url') {
+      doControl('launch_url', val, function (r) {
+      if (!r || !r.ok) {
+        console.error('mqtt: launch_url failed: ' + ((r && (r.error || r.errorText)) || 'unknown error'));
+      }});
+      return;
+    }
+
     if (action === 'update') {
       // Home Assistant's update entity sends `install`. Anything else on this
       // topic is read as a request to look rather than to install, so an
