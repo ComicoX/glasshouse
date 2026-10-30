@@ -12,19 +12,28 @@ declarations: receiver formats remain separate from TV capabilities, an eARC
 EDID flag does not promote ARC, stale driver values do not become live audio,
 and corrupt or missing evidence remains unknown. A named read of the sound output
 wins over a stale whole-category read, and a refused one leaves the category's
-values. The endpoint is read-only and starts no process in those fixtures.
-Synthetic C9 cases cover `dimension.input`, HAWK2's native EDID, invalid
+values. Synthetic C9 cases cover `dimension.input`, HAWK2's native EDID, invalid
 checksums/lengths/bytes, failed native reads without family fallback, and
 omission of unspecified, disconnected or unstable channel metadata. They check
 logical input parameters and that native-app playback never reads an arbitrary
 HDMI port. Channel metadata does not establish a codec, playback or eARC
-negotiation.
+negotiation. It also checks that wrong targets, unverified helpers, read-only
+mode and cross-origin requests cannot launch the privileged helper. On a
+mocked OLED83G54LW with the native package, it checks that HD payload is
+reported only with every readiness signal, that leftover changes ask for
+restoration, that a receiver or link not fit for the mode is refused before
+the controller runs, and that a failed or incomplete disable is not confirmed.
+Hardware qualification of a DTS override still requires a source-to-receiver
+trial.
 
 The dashboard check opens both Audio tabs: the sound settings come first and
-are gone from the TV app's System tab, and a failed read leaves no stale
-readings. Both tabs render C9 source channel metadata separately from incoming
-audio. The web tab removes stale controls after a failed read and restores
-them after a successful retry.
+are gone from the TV app's System tab, experimental forwarding asks for a
+second OK to enable and stops in one, and unsupported, read-only and
+failed-read states offer no override. Helper writes are intercepted in the
+browser; this does not qualify forwarding on hardware. Both tabs render C9
+source channel metadata separately from incoming audio. The web tab also
+rejects a late pre-change snapshot, removes stale controls after a failed read
+and restores them after a successful retry.
 
 `test-lgsettings.js` checks that picture writes refuse hidden settings and
 inactive choices, alongside locked rows and values outside the TV's range, and
@@ -51,7 +60,7 @@ shows the Picture tab.
 | [`check-screensavers.py`](https://github.com/rorygallagher2024/glasshouse/blob/main/.github/workflows/checks.yml#L40-L41) | Screen saver QML that the TV's QtQuick version cannot load. |
 | [`check-drift.py`](https://github.com/rorygallagher2024/glasshouse/blob/main/.github/workflows/checks.yml#L43-L44) | The [entity reference](../HOME-ASSISTANT-ENTITIES.md) out of step with the entities the server publishes, and a dashboard file missing from `deploy.sh`'s list, which would never be installed. |
 | [`check-entity-stability.py`](https://github.com/rorygallagher2024/glasshouse/blob/main/.github/workflows/checks.yml#L47-L48) | A Home Assistant entity from the last release that has gone, been renamed or changed domain, which leaves it unavailable and stops every automation that used it. A deliberate removal is listed in [`scripts/retired-entities.txt`](https://github.com/rorygallagher2024/glasshouse/blob/main/scripts/retired-entities.txt) with the reason. |
-| [`shellcheck`](https://github.com/rorygallagher2024/glasshouse/blob/main/.github/workflows/checks.yml#L51-L52) | Mistakes in `deploy.sh`, `tvwebctl` and the boot script. |
+| [`shellcheck`](https://github.com/rorygallagher2024/glasshouse/blob/main/.github/workflows/checks.yml#L51-L52) | Mistakes in `deploy.sh`, `tvwebctl`, the boot script, `check-all.sh` and `tv.sh`. |
 | [`TypeScript`](https://github.com/rorygallagher2024/glasshouse/blob/main/.github/workflows/checks.yml#L54-L55) | Type errors, from the JSDoc types in the server's JavaScript. |
 | [`check-entities.py`](https://github.com/rorygallagher2024/glasshouse/blob/main/.github/workflows/checks.yml#L57-L58) | A Home Assistant entity reading a field the TV's telemetry does not have, checked against a B8's real telemetry. A field read with a fallback (`else`, or `or` another field) may be absent. |
 | [`check-upgrade.js`](https://github.com/rorygallagher2024/glasshouse/blob/main/.github/workflows/checks.yml#L61-L62) | A release the updater already installed on a TV would refuse. The updaters of the latest release and the oldest still in use install the change in place, from a local copy, as a TV does when it updates; 0.82.0 and 0.82.1 could not be installed that way (#586). |
@@ -87,7 +96,9 @@ The worker itself stays Python 2.7 compatible for the TV.
 
 `test-screensaver-dropped.js` covers a refused request's fallback, remote dismissal and restart recovery, failed closes, delayed replies, and playback or source changes that must prevent a launch. `test-remote-buttons.js` checks that Home, coloured buttons and ordinary keys reach the dismissal handler through both parsed events and the worker stream, including split lines.
 
-`test-idlesaver.js` checks that an idle screen saver refused by panel care is asked for again without its hold, and that the hold is put back when it closes or is still refused, but not over an app that has come to the front since. Failed restores are retried, a lost policy reply remains tracked, and a server restart recovers an outstanding lift. Delayed idle callbacks respect later power changes, and a dashboard lift expires if no screen saver starts. Its own request's refusal, playback and a TV without `setEplAppInfo` are left alone. The assertions run on Node 0.10 and 0.12 as well as newer versions.
+`test-idlesaver.js` checks that an idle screen saver refused by panel care is asked for again without its hold, and that the hold is put back when it closes or is still refused, but not over an app that has come to the front since. An app that still refuses it is not lifted again until another app is in front or the TV leaves On. Failed restores are retried, a lost policy reply remains tracked, and a server restart recovers an outstanding lift. Delayed idle callbacks respect later power changes, and a dashboard lift expires if no screen saver starts. Its own request's refusal, playback and a TV without `setEplAppInfo` are left alone. The assertions run on Node 0.10 and 0.12 as well as newer versions.
+
+`test-luna-absent.js` checks that a failed call to an LG service missing from the TV's service files makes later calls to it fail at once, for 10 minutes, while listed services and homebrew ones keep being called.
 
 `test-window-state.js` checks that short gaps in window focus do not publish empty remote attributes, persistent gaps do, standby clears immediately, and reconnects republish the retained state. The server boot test checks that the three SurfaceManager subscriptions start only with MQTT enabled.
 
@@ -122,6 +133,8 @@ and fails on any warning Home Assistant logs: a field missing from the payload
 is logged on every message, which was tens of thousands of lines an hour with
 a few TVs (#761).
 
+The job keeps the installed Home Assistant for a week, so it runs the newest release from the first run each week, the weekly scheduled one included.
+
 It runs when the server or the check changes, not for documentation, and
 weekly, since Home Assistant is not pinned: a release that starts rejecting a
 config shows there first.
@@ -135,6 +148,8 @@ not a failure: it is how the server says an app has none, and the fake TV's
 installed apps have no icon files. A function a page calls that has gone, or an
 element it reaches for that has moved, breaks only when that tab opens, which
 no unit test does. It runs when the server, the pages or the fake TV change.
+
+The checks run in four groups side by side, each against its own server and fake TV, since the Home checks change the layout and uploads they read back. A new check goes in the group it shares state with, or in the shortest.
 
 For the Home view, arranging checks cover a late catalogue reply, resetting after moving a tile, and an update noticed while arranging. Picture checks cover a layout with picture details left at their default (off), the plate's single mode and OLED light, an input with no signal keeping its line level with the source's first line, a delayed reply after changing source, and a delayed reply after switching picture details off. Its service replies are simulated; the page and its timers run in Chromium.
 
@@ -169,15 +184,13 @@ and show none.
 
 ## Running them locally
 
-From the repository root:
+From the repository root, `scripts/check-all.sh` runs the checks CI runs, side by side, and shows the output of any that fail. It runs `npm ci` only when `package-lock.json` has changed since the last install, and `--quick` leaves out the dashboard and updater checks. `check-upgrade.js` reads the committed tree, so commit first.
 
 ```bash
-npm ci && npx tsc
-node test/run-all.js
-for s in check-es5 check-module-calls check-ui-ids check-strings check-screensavers check-drift; do ./scripts/$s.py || break; done
-./scripts/check-entities.py --stats test/fixtures/stats-b8-webos4.json
-node scripts/check-upgrade.js
+scripts/check-all.sh
 ```
+
+`node test/run-all.js` runs only the unit tests. Words after it run only the suites whose file name contains one, as `node test/run-all.js home luna`, and `--times` lists the slowest. A failing suite's output is printed again after the results, so the end of a long CI log shows it. A suite whose header says `@shards N` is started N times, each copy running every Nth step through `test/shard.js`: `test-home.js` waits on Glasshouse Home's real timers, up to 10 s a step, and runs as 16 copies. Each of its steps sets up the TV it needs, as no copy sees the steps another runs.
 
 The dashboard check needs Playwright and its browser:
 
@@ -219,6 +232,9 @@ Home recovery checks cover a switch-off cut short, failed layout restoration and
 `test-home.js` also checks LG's native CEC launch contract: a receiver and a
 console on the same port select their own device IDs, a direct source selects
 its ID, and missing or unusable IDs and non-CEC inputs open the port alone.
+Last watched on that port names the device the TV last selected there, read
+fresh past the cached device list, and every device on the port when the TV
+has not recorded one.
 
 `test-home-wallpaper-upload.js` exercises the real HTTP boundary: rejected and interrupted uploads preserve the previous image, concurrent uploads are refused, the lock is released after an abort, an uploaded JPEG survives reinitialisation and is served with its image type, and one time of day's picture is removed alone, an unknown one refused. With the download stubbed, a chosen set is fetched from its tag and not again once on the TV, the owner's own pictures are kept while it shows, a picture that fails its checksum or download is not kept and leaves the choice as it was, and an older install's four example pictures become the landscape set while other uploads become the owner's own. The dashboard check chooses **Your own**, then Morning and uploads to it, preparing a PNG as JPEG, shows the pending upload in a second tab and the picture once done, drops an image on Evening, removes Morning alone and then all of them.
 

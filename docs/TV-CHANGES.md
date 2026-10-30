@@ -1,6 +1,6 @@
 # What the dashboard changes on the TV
 
-## Audio capabilities
+## Audio capabilities and DTS forwarding
 
 The Audio tabs read LG's capability, settings and ARC services, the current
 HDMI EDID and audio driver status, and the media-resource declaration file. LG's DTS decoder is inspected on demand, at most once every five minutes.
@@ -10,6 +10,41 @@ from the mapped HDMI receiver's status file. A snapshot performs no EDID or
 audio-setting write.
 Native controls use LG's ordinary settings service.
 
+The experimental override invokes `control.sh enable` or `disable` on an
+already-installed, pinned lg-g5-dts helper, only on its exact supported target.
+Enable requires matching runtime-file hashes, kernel and firmware plus a
+DTS/DTS-HD-capable eARC receiver. The helper owns its enabled marker, service, kernel
+hooks, capability override and audio restoration. Glasshouse installs no
+decoder, firmware or kernel module. Unknown targets are refused; a matching
+verified helper can still be disabled after a firmware mismatch.
+
+The separately installed native-app package adds a shared GStreamer DTS
+forwarder on OLED83G54LW.BEKYLJP firmware 33.31.68, with an exact boot-image
+hash and kernel code guards. By default it forwards 48 kHz DTS core, including
+the core from compatible DTS-HD tracks. An opt-in HD mode (`control.py mode
+hd`, which writes `hd-rate` in the package directory) forwards complete DTS-HD
+frames on an eight-channel 192 kHz eARC carrier. While an HD stream holds the
+route, the kernel module changes LG's bypass sample-rate converter format, the
+eARC output clock, the eARC format, channels and mute, and re-runs LG's eARC
+link set-up. Playback starts and recovers muted until that is in place. On
+release it restores the saved settings, or LG's current settings if another
+source has taken the output.
+Enabling sets the owned `TrueHD+dts` declaration, adds a volatile
+`umediaserver.service` plugin-path drop-in, bind-mounts a checked copy of
+`/etc/gst/gstcool.conf` that ranks the forwarder ahead of LG's DTS decoder
+proxy, and restarts ARC and media playback. The bind mount does not survive a
+reboot; the boot hook reapplies it while enabled.
+The package lives under `/var/lib/lg-dts-native`; its boot hook reapplies the
+registration while enabled. A kernel route exists only during DTS playback.
+A producer lease restores the previous route within 20 seconds of a stalled
+producer; normal stop and end-of-stream release it directly. Seeking retains
+the route. While enabled, a DTS stream in a TV app without the eARC set-up is
+refused rather than handed back to LG's decoder. Disabling removes the
+registration and the bind mount, releases the route and restores the owned
+declaration.
+The declaration also affects HDMI capability reporting; this package qualifies
+native playback only. The original HDMI helper retains its separate compatibility
+checks.
 Nothing on the read-only root filesystem is written. Everything below other
 than the server's own files happens only when the owner switches it on, and the
 riskier controls ask for confirmation in the dashboard first.
@@ -22,7 +57,7 @@ riskier controls ask for confirmation in the dashboard first.
 | Boot hook that starts the server | `/var/lib/webosbrew/init.d/50-tvweb`, a link into the app when installed from the Homebrew Channel | Uninstalling |
 | Boot log | `/var/lib/webosbrew/tvweb-boot.log`, kept under 32 KB | Uninstalling |
 | Screen saver launched after a refused request | `/var/run/tvweb-screensaver-launched` records that Glasshouse opened it directly, so a server restart can resume remote dismissal without adopting a cached native screen saver. Remote keys are watched while it shows | Closing the screen saver, or restarting the TV |
-| Panel care's screen saver hold | Where LG's panel care service (eplmanager) refuses an idle screen saver, the app in front is handed to it without the hold (`setEplAppInfo`, `supportScreenSaverPolicy` on, a 1-minute delay) and the screen saver asked for again. Also before **Start screen saver**. `/var/run/tvweb-idlesaver` records the app before changing its policy | screenmanager's setting is sent back when the screen saver closes or is still refused, retrying failed restores. A server restart recovers the record and restores once the screen saver is closed; the next change of app or a restart of the TV resets the policy too |
+| Panel care's screen saver hold | Where LG's panel care service (eplmanager) refuses an idle screen saver, the app in front is handed to it without the hold (`setEplAppInfo`, `supportScreenSaverPolicy` on, a 1-minute delay) and the screen saver asked for again. Also before **Start screen saver**. `/var/run/tvweb-idlesaver` records the app before changing its policy | screenmanager's setting is sent back when the screen saver closes or is still refused, retrying failed restores. An app that still refuses it is not lifted again until another app is in front or the TV leaves On. A server restart recovers the record and restores once the screen saver is closed; the next change of app or a restart of the TV resets the policy too |
 | Boot hook that holds switched-off services down, in the background so the hooks after it are not held up | `/var/lib/webosbrew/init.d/20-tvweb-services`, only once a service is switched off, and written again at each server start | Switching the services back on, or uninstalling |
 | Home-screen tile | The Homebrew Channel app, or with `deploy.sh` a developer app | Removing the app |
 | Glasshouse package updates | `/media/developer/temp/glasshouse-update`, deleted after success or failure; the release’s checksum is checked before replacing the installed app and restarting the server. The open Glasshouse app closes; settings are kept, but no rollback copy is made | No automatic rollback |
@@ -51,7 +86,7 @@ the first reboot after uninstalling.
 | Debugger closed to the network | Adds a firewall rule dropping port 9998 (WebAppMgr's DevTools, opened by Developer Mode) on every interface but loopback. Put back each time the server starts, not by the boot hook. Nothing on a TV whose kernel has no firewall | `allowNetworkDebugger` in `config.json` or toggled from the Server tab, uninstalling from the Homebrew Channel, a reboot after any other uninstall, or `iptables -D INPUT -p tcp --dport 9998 ! -i lo -j DROP` |
 | Clock set from an NTP server | With a time server set on the Server tab, or `ntp.server` in `config.json`, sets the TV's clock through its time service, hourly and when the TV switches on. The service records the time as coming from LG's time servers | Switching it off on the Server tab, or emptying `ntp.server`. The clock stays as set until LG's next sync |
 | Home screen layout | On webOS 9, writes a copy of LG's own Home screen layout without the parts switched off to `/mnt/lg/cmn_data/manifest/`, where the home app looks before its built-in one, and restarts the home app after deleting its saved copies (`/tmp/checkpoint` and `/mnt/lg/cmn_data/checkpoint`), which the TV makes again. On webOS 10 (experimental), mounts an overlay over the home app's assets folder with a changed `home.xml` on top, from `/tmp/glasshouse-home`, put back each time the server starts; the choices and a copy of LG's `home.xml` are kept in `/var/lib/tvweb`. Input tiles are LG's own launch points, recorded in `home-inputs.json` in `/var/lib/tvweb`. On webOS 9, their titles are made visible and refreshed from CEC names when the Home screen opens, shortly after the TV switches on and at server start, never in standby; only recorded tiles are updated | **Put back LG's Home screen** on the Apps tab, or `tvwebctl restore-home` before uninstalling |
-| Screen-time limits | While on in the Advanced tab, shows toasts and, at a limit, switches the TV or its screen off or goes to Home | Switching them off |
+| Screen-time limits | While on in the System tab, shows toasts and, at a limit, switches the TV or its screen off or goes to Home | Switching them off |
 | Replacement screen saver | Bind-mounts over the built-in screen saver app: one of Glasshouse's, one added on the TV, or an installed homebrew app's, whose QML file is copied in. Experimental on webOS 12 and later, where the replacement is untried: turned on from the Screensaver tab, or under Server → Advanced → Experimental features. On webOS 10 and 11, where the built-in one is a Flutter app, a switch the app manager does not take without a restart is undone, rather than the app manager restarted | Choosing the stock screen saver |
 
 ## Changes that stay
@@ -96,6 +131,9 @@ Glasshouse Home's **Last watched**, **App count** and **CEC addresses** switches
 While Glasshouse Home and its picture details (off by default) are on and the TV is out of standby, a read-only `videooutput/getStatus` subscription records the last video each app plays for the plate. It starts before the first Home visit and stops when either is switched off or the TV goes into standby. Recorded videos stay in memory until the server restarts. HDMI signal and picture-mode reads change no TV settings.
 
 Back on Glasshouse Home reads the TV's recent-app list and its snapshots.
+The saved `excludedRecents` list in `home.json` omits selected apps from this
+panel and blocks their preview images through Glasshouse's recent-image endpoint.
+It does not stop webOS taking snapshots or change LG's native Recents.
 Close and Close all stop only the selected listed apps, through
 `applicationManager/closeByAppId` for native apps and WebAppMgr's `killApp`
 for web apps, and confirm they have stopped before removing their cards with
