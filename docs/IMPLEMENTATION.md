@@ -572,6 +572,46 @@ together can finish out of order. A key schedules no telemetry read of its own;
 an app it opens reaches Home Assistant through the foreground-app subscription.
 Each key's wait and run time is logged at debug level.
 
+### Where the dashboard's keyboard box types
+
+`sendText` with the box's whole content in `full` chooses a route per call
+(`chooseTypingRoute` in `controls.js`, the adapters in `typing.js`); without
+`full`, as Home Assistant and older dashboards call it, it is always LG's input
+method. The routes type only what changed (`text` and `replace`), so `full` is
+the dashboard's way of asking for a route; its content is not read. The choice is held for 2 s, and dropped after a failure or an Enter.
+
+1. LG's input method, when LG's keyboard window is up (webOS 6+) or
+   `ime/registerRemoteKeyboard` answers `currentWidget.focus` true. That call
+   is made with the subscription in the payload and `-n 1`, so `luna-send`
+   leaves with the first answer and nothing stays registered. Also the route
+   when the foreground app cannot be read.
+2. A web app's page: the page on 127.0.0.1:9998 whose address holds the app id,
+   `https://www.youtube.com/tv` for `youtube.leanback.v4`, or the only page when
+   `getAppInfo` says the app is a web app. The server speaks a minimal
+   WebSocket (masked client frames, 16-bit lengths) to the page and sends
+   `Input.dispatchKeyEvent` one command at a time, waiting for each answer
+   (3 s without one fails). Backspace is `rawKeyDown`/`keyUp` with key code 8,
+   a character a `keyDown` with its text, Enter code 13. `devtools.js` closes
+   the port to the network only, so loopback keeps working; with Developer Mode
+   off nothing listens. A web app is then sent nothing, nor an app whose
+   `getAppInfo` `main` is `cobalt` (YouTube, a native app on a C2 with webOS
+   9.2.2): it took none of the key presses below. The answer has `method: 'none'`,
+   and the dashboard shows its note rather than an error on each key.
+3. Key presses on `networkinput/test/sendKeyCode`, for native apps: lowercase
+   letters, digits and unshifted symbols, 50 at a time, Enter as OK.
+
+The answer is `{ ok, error, method, sent }`. `sent` is there for routes that go
+one key at a time (the page and key presses), and tells the dashboard to empty
+its box on a failure, since what the TV received is unknown.
+
+The box cannot read a custom field's content, so it tracks only what it has
+sent. Backspace in an empty box is stopped in the page (`kbIgnoreBackspaceInEmptyBox`
+in `assets/ui/controls.js`) and sends nothing, as a Backspace on YouTube's empty
+search acts as Back. Deleting the last character still goes out, as `replace` 1
+with an empty `text`, because the box is not empty when the key goes down. The
+dashboard notes "Typing as key presses; lowercase only." when the key-press route
+was used.
+
 ## Remote keys through the compositor's filter chain
 
 The compositor, `surface-manager`, does not act on remote keys itself. It reads
@@ -765,9 +805,9 @@ the previous boot's, so a tool that is no longer started leaves nothing behind.
 The table is written in place rather than replaced, since app jails such as
 Amazon's bind-mount it as their own `tmp/hosts` while it is mounted.
 
-Nine of the nineteen domains are ad, tracking and diagnostics hosts that
-nothing on the TV needs. The other ten are **LG infrastructure rather than
-advertising**, which is why they are a separate tier:
+Nine of the twenty domains are ad, tracking and diagnostics hosts that
+nothing on the TV needs. The other eleven are **platform infrastructure rather
+than advertising**, which is why they are a separate tier:
 
 | Domain | What it actually serves |
 | :--- | :--- |
@@ -775,6 +815,7 @@ advertising**, which is why they are a separate tier:
 | `cdplauncher.lgtvcommon.com`, `lgchhomeapp.lgtvcommon.com` | The Home launcher's recommendations and usage reports; needed by the Content Store after a factory reset |
 | `lgtviot.com` | The ThinQ cloud: the LG ThinQ app can no longer control the TV with it blocked |
 | `ueiwsp.com` | Universal Electronics' identification of devices connected over HDMI-CEC |
+| `avsxappcaptiveportal.com` | Amazon's Alexa checking the TV is online: `libAVSCommon` asks it for `/generate_204` on a timer while Alexa runs, and with it blocked Alexa reads the TV as offline |
 | `lgtvsdp.com` (and `us.`/`gb.`/`eu.`) | Service platform behind the Content Store on webOS 4 |
 | `nextlgsdp.com` (and `us.`/`gb.`/`eu.`) | The same on webOS 9 |
 

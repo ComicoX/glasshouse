@@ -351,10 +351,11 @@
         <form class="toast-form" onsubmit="event.preventDefault();sendTypedText();">
           <input type="text" id="kb-text" placeholder="Focus a field on the TV, then type"
                  data-t-placeholder="ctl.keyboard.placeholder" maxlength="500" autocomplete="off" spellcheck="false"
-                 oninput="kbSyncLive()">
+                 oninput="kbSyncLive()" onkeydown="kbIgnoreBackspaceInEmptyBox(event)">
           <button type="submit" id="btn-kb-enter" data-t="ctl.keyboard.enter">Enter</button>
         </form>
         <p class="sub" id="kb-hint" data-t="ctl.keyboard.hint">Focus a text field on the TV first, such as a search box or a web address. What you type here goes to it as you type, backspace included, and Enter submits it.</p>
+        <p class="sub" id="kb-via"></p>
       </div>
     </details>
 
@@ -781,6 +782,16 @@
           stop and the TV no longer finds devices by itself.</div>
       </div>
       <div class="prot-status"><button type="button" class="pill idle" id="btn_devdetect" onclick="toggleDeviceDetection()">&mdash;</button></div>
+    </div>
+    <div class="prot-row" id="row-locallookups" hidden>
+      <div class="prot-main">
+        <div class="prot-title" data-t="adv.localLookups">Answer device scans on the TV</div>
+        <div class="prot-desc" data-t="adv.localLookups.desc">LG's device detection asks your router for the name of every address on your home network:
+          whenever the TV's Home Hub looks for devices, and on some TVs every 5 minutes, even with Auto device detection off.
+          A network-wide ad blocker such as Pi-hole shows them as hundreds of requests. Switched on, the TV answers them itself,
+          so they stay off your network. Nothing the TV shows changes.</div>
+      </div>
+      <div class="prot-status"><button type="button" class="pill idle" id="btn_locallookups" onclick="toggleLocalLookups()">&mdash;</button></div>
     </div>
   </div>
 

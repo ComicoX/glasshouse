@@ -1195,6 +1195,42 @@ codes 428 (the microphone) and 1117 (Google Assistant), LG's xkb codes 436 and
 webOS 4.10.2 reports 428 for the microphone too. With either set in Remote keys,
 the compositor's filter keeps the press from LG and the device still delivers it.
 
+## Typing into apps that ignore LG's input method (55UM7290PTD, webOS 4.10.2, Glasshouse 0.132.0)
+
+The dashboard's keyboard box types through `com.webos.service.ime`
+(`insertText`, `deleteCharacters`, `sendEnterKey`), which only reaches LG's own
+text fields. `ime/registerRemoteKeyboard` with `{"subscribe":true}` answers at
+once with `currentWidget`; on a screen with no LG field it was
+`{"currentWidget":{"focus":false}}`. The answer on a focused LG field was not
+read on this TV.
+
+- **Native apps (Nuvio Legacy 2.0.8, SDL).** `networkinput/test/sendKeyCode`
+  with Linux evdev codes typed letters, space and backspace into its search
+  (`KEY_B` 48, `KEY_H` 35, `KEY_I` 23, `KEY_SPACE` 57, `KEY_M` 50,
+  `KEY_BACKSPACE` 14). The call takes one code and no modifier, so there is no
+  shift. Digits and unshifted punctuation were not tried. Nuvio treats `s`
+  as a shortcut for its Saved panel even while its search has focus, so `s`
+  cannot be typed this way; pressing OK on its search box opens LG's keyboard,
+  where the input method types everything. Back to back, a letter was
+  sometimes lost, so the keys go about 60 ms apart.
+- **YouTube (`youtube.leanback.v4`), a web app.** IME, `sendKeyCode`, writes to
+  the remote's evdev node and a uinput keyboard did nothing in its own
+  on-screen-keyboard search. The web app debugger on 127.0.0.1:9998 lists its
+  page in `/json` as type `page`, title "YouTube on TV", URL
+  `https://www.youtube.com/tv?...`. Chrome DevTools Protocol over the page's
+  `webSocketDebuggerUrl`, `Input.dispatchKeyEvent` with `{type: "keyDown",
+  key: "a", code: "KeyA", text: "a", unmodifiedText: "a",
+  windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65}` then the same as
+  `keyUp`, typed "a" into the search. Sent back to back, the results matched the
+  query but the box showed some letters missing; about 60 ms between keys
+  keeps them. Backspace (`rawKeyDown`, code 8) deletes, and on an empty box it
+  acts as Back. Chromium is 53 (WebKit 537.36), protocol
+  1.1. `devtools.js` only drops port 9998 for traffic that is not on loopback,
+  so this is not affected by closing the debugger to the network.
+
+Glasshouse picks between these by the app in front; docs/IMPLEMENTATION.md has
+the order.
+
 ## LG's Home started again behind Glasshouse Home (G3, webOS 11.2.0)
 
 Reported in #1042 by BlueSink from an OLED77G3PUA, firmware 43.21.71. A minute
@@ -1400,6 +1436,24 @@ to an unlisted one, such as `com.webos.service.audio` or
 `com.webos.service.videooutput`, gets no answer: luna-send waits out `-w` and
 logs "Shutting down with unsent QueryName message", and ls-hubd logs
 `LSHUB_NOT_LSTED` "Service not listed in service files" as an error (#1112).
+A 55SJ800V-ZB (webOS 3.9.3) answered the same way, with nothing, for
+`com.webos.service.settings`, where it lists only `com.webos.settingsservice`
+(#1137), so a TV that old never says "Service does not exist" for a renamed one.
+
+## LG's device scans (webOS 9.2.2, C2; #244)
+
+`iconnectivity` (UEI QuickSet) reverse-looks-up every address on the TV's
+/24. On a C2 with `other.ueiEnable` off, opening the Home Hub's page for
+connecting other devices sent 759 PTR queries in two minutes (three passes),
+and nothing periodic followed. A reporter's TV sent all 253 every 5 minutes
+(1.6 s each pass) alongside `www.ueiwsp.com`, and `discovery.meethue.com`
+every 1.5 to 3.5 minutes; the C2 asks for the latter too. Other C1 (webOS
+6.5.3) and C3 owners report the same with Auto device detection off.
+`iconnectivity` resolves through glibc (`getnameinfo`, from `libqse` and
+`librim_qsp`) and c-ares; `/etc/nsswitch.conf` reads `hosts: files mdns
+myhostname dns`, so `/etc/hosts` is consulted first. Its state is in
+`/mnt/lg/cmn_data/iconnectivity` (`environ.conf` holds `ueiEnable`;
+`qs_data/discovered_devices.db` was written that day with it off).
 
 ## Boot and app state (webOS 9.2.2, C2)
 
@@ -1672,6 +1726,20 @@ Glasshouse Home on behind `allowExperimentalHome`.
   with WebAppMgr running: its page was loading from cold. A 5 s wait for its
   first heartbeat gave LG's Home the place every time, so Glasshouse Home
   never opened. With the wait at 20 s it opened.
+
+## Glasshouse Home without the remote after a wake (C5, webOS 11.2.0)
+
+On an OLED65C5PSA (firmware 43.21.77) with an MR25GA, after every wake from
+standby Glasshouse Home was drawn and kept beating, but arrows, OK and the
+pointer did nothing, while `lginput2` logged each press as `NL_BUTTON_CLICK`
+(#1122). It happened after a full restart too. Stuck, surface-manager's
+`getFocusedWindowInfo` named `com.webos.app.home` (`fullscreen`) and
+`getForegroundWindowInfo` it alone as the card; LG's Flutter Home was not
+running, WebAppMgr was, and `com.webos.app.starfish_flutter_systemui` was. So
+the compositor gave the view the keys and they were lost in the web engine.
+`closeByAppId` on `com.webos.app.home`, 2 s, then `launch` brought them back
+every time. On that TV `preloadmanager/setPreloadPolicy` failed each time it
+was asked.
 
 ## WebAppMgr stopped (G4, webOS 11.2.0)
 
